@@ -5,6 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SectionBand } from "@/components/ui/section-band";
 
+// Force dynamic rendering — see the matching comment in
+// src/app/organizations/page.tsx for why. This page in particular is the
+// one most likely to otherwise get frozen at build time with zero
+// organizations/projects baked in, since it's the first thing anyone
+// deploying this app opens.
+export const dynamic = "force-dynamic";
+
 // The app's landing page. With exactly one organization on record (the
 // common case for this prototype) it renders that organization's
 // dashboard directly, zero extra clicks — the same experience as before

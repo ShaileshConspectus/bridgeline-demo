@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/card";
 import { SectionBand } from "@/components/ui/section-band";
 
+// Force dynamic rendering — see the matching comment in
+// src/app/organizations/page.tsx for why.
+export const dynamic = "force-dynamic";
+
 // The full project list and "create a new project" form — split out of
 // the landing page when that page became the Organization Dashboard
 // (src/app/page.tsx), which links here for project management and links

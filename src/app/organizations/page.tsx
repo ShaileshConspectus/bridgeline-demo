@@ -7,6 +7,15 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SectionBand } from "@/components/ui/section-band";
 
+// Force dynamic rendering — this page reads organizations/projects from
+// the database on every request. Without this, Next.js treats it as a
+// static page with no dynamic APIs and prerenders it ONCE at build time,
+// which bakes in whatever the database looked like during the build step
+// (often empty, e.g. on a host where seeding happens after the build
+// finishes) and never re-renders it again, no matter what changes in the
+// database afterward.
+export const dynamic = "force-dynamic";
+
 // Every organization in this workspace, each with a project count and a
 // link into its own dashboard (/orgs/[orgId]) — plus the form to create
 // a new one. Reachable from the landing page whenever there's more than

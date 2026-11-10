@@ -3,6 +3,10 @@ import { getFunderDashboardData } from "@/lib/org-dashboard";
 import { StatTile, FundCard } from "@/components/dashboard/org-dashboard";
 import { SectionBand } from "@/components/ui/section-band";
 
+// Force dynamic rendering — see the matching comment in
+// src/app/organizations/page.tsx for why.
+export const dynamic = "force-dynamic";
+
 // The cross-organization "Funder View" — a donor/impact-investor/lender's
 // own relationships, rolled up by capital provider across every
 // organization in the workspace, not just one. Same "by fund" grouping
