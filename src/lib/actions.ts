@@ -670,9 +670,46 @@ export async function updateMetricRequiresElevatedVerification(metricId: number,
 }
 
 export async function deleteMetric(metricId: number, projectId: number) {
+  // Every observation this metric ever received went through the
+  // verification pipeline (src/lib/verification.ts), which always writes
+  // at least one observation_quality_checks row and usually a
+  // verification_records row too. observation_quality_checks.observationId
+  // is a NOT NULL foreign key to metric_observations.id, and this app runs
+  // with PRAGMA foreign_keys = ON (src/db/client.ts) — so deleting
+  // metric_observations directly, as this used to do, throws "FOREIGN KEY
+  // constraint failed" the moment a metric has ever had a result reported
+  // against it (i.e. almost always), crashing the request instead of
+  // deleting anything. Fixed by deleting each observation's child rows
+  // first, mirroring exactly what deleteMetricObservation already does
+  // per observation (below).
+  const observations = await db
+    .select({ id: metricObservations.id })
+    .from(metricObservations)
+    .where(eq(metricObservations.metricId, metricId));
+  for (const { id: observationId } of observations) {
+    await db.delete(observationQualityChecks).where(eq(observationQualityChecks.observationId, observationId));
+    await db
+      .delete(verificationRecords)
+      .where(and(eq(verificationRecords.recordType, "observation"), eq(verificationRecords.recordId, observationId)));
+  }
+  await db.delete(metricObservations).where(eq(metricObservations.metricId, metricId));
+
+  // certification_records.linked_metric_id and learning_agenda_items.linked_metric_id
+  // are nullable FKs to this metric — a certification or Learning Agenda
+  // item referencing it is its own independent record, so unlink rather
+  // than delete, then the metric itself can be removed without violating
+  // either foreign key.
+  await db
+    .update(certificationRecords)
+    .set({ linkedMetricId: null })
+    .where(eq(certificationRecords.linkedMetricId, metricId));
+  await db
+    .update(learningAgendaItems)
+    .set({ linkedMetricId: null })
+    .where(eq(learningAgendaItems.linkedMetricId, metricId));
+
   await db.delete(hypothesisMetricLinks).where(eq(hypothesisMetricLinks.metricId, metricId));
   await db.delete(metricTargets).where(eq(metricTargets.metricId, metricId));
-  await db.delete(metricObservations).where(eq(metricObservations.metricId, metricId));
   await db.delete(jurisdictionBaselines).where(eq(jurisdictionBaselines.metricId, metricId));
   await db.delete(metricCapitalProviderTags).where(eq(metricCapitalProviderTags.metricId, metricId));
   await db.delete(metrics).where(eq(metrics.id, metricId));
