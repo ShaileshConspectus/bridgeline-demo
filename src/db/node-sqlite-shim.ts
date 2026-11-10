@@ -72,6 +72,17 @@ export class BetterSqliteCompatShim {
 
   constructor(filePath: string) {
     this.db = new DatabaseSync(filePath);
+    // Set this before anything else touches the connection. Next.js's
+    // build step ("collecting page data") loads every route's modules in
+    // several parallel worker processes, and each one imports
+    // src/db/client.ts — which opens its own connection to this same
+    // file and immediately tries to apply migrations. Against a brand
+    // new, not-yet-migrated database, those workers race to take the
+    // first write lock; without a busy timeout, SQLite makes the losers
+    // fail immediately with "database is locked" instead of waiting.
+    // With this set, a losing worker just waits (up to 5s) for the lock
+    // to clear, then finds the migration already applied and moves on.
+    this.db.exec("PRAGMA busy_timeout = 5000");
   }
 
   prepare(sql: string) {
