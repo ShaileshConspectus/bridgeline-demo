@@ -1,0 +1,2 @@
+ALTER TABLE `impact_hypotheses` ADD `linked_engagement_stage_id` integer REFERENCES engagement_funnel_stages(id);--> statement-breakpoint
+ALTER TABLE `impact_hypotheses` ADD `linked_commercial_stage_id` integer REFERENCES commercial_value_chain_stages(id);

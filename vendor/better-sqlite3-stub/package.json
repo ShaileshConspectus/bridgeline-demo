@@ -1,0 +1,7 @@
+{
+  "name": "better-sqlite3",
+  "version": "13.0.3",
+  "description": "Stand-in for the real better-sqlite3 native addon. drizzle-orm/better-sqlite3/driver.js imports this unconditionally at module load time even though this app never takes the code path that constructs it (see src/db/node-sqlite-shim.ts) — this stub exists purely so that import resolves without requiring a native build. It throws if actually instantiated.",
+  "main": "index.js",
+  "types": "index.d.ts"
+}

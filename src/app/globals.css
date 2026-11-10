@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/*
+ * Palette sourced from the Conspectus Advisors two-pager (deep navy
+ * letterhead + steel-teal stat highlights + pale blue-gray tinted call-out
+ * boxes on a white ground) — sampled directly from the document rather than
+ * approximated, so the app's chrome reads as the same firm's product:
+ *   header/section-band navy .......... #1B2B4C
+ *   navy hover/active (darker) ........ #14213B
+ *   stat/link/accent teal .............. #2F7E8B
+ *   tinted call-out surface ............ #ECF2FB
+ *   body text (near-black navy) ........ #101B2E
+ */
+:root {
+  --background: #f5f7fa;
+  --surface: #ffffff;
+  --foreground: #101b2e;
+  --muted: #5b6b84;
+  --muted-surface: #ecf2fb;
+  --border: #d7e0ec;
+  --primary: #1b2b4c;
+  --primary-hover: #14213b;
+  --primary-foreground: #ffffff;
+  --accent: #2f7e8b;
+  --accent-foreground: #ffffff;
+  --danger: #a7332a;
+  --warning: #9a6a12;
+  --ok: #2f7e5b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-surface: var(--muted-surface);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-ok: var(--ok);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0e1524;
+    --surface: #16223a;
+    --foreground: #eaf0f9;
+    --muted: #93a3bd;
+    --muted-surface: #1c2b47;
+    --border: #2c3c5c;
+    --primary: #37517f;
+    --primary-hover: #4a689f;
+    --primary-foreground: #ffffff;
+    --accent: #57b7c4;
+    --accent-foreground: #06222a;
+    --danger: #e58a80;
+    --warning: #e0b458;
+    --ok: #6bc79a;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
