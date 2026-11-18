@@ -8,12 +8,13 @@ export function ProjectNav({
 }: {
   projectId: number;
   projectName: string;
-  active: "settings" | "thesis" | "dashboard" | "reports" | "metrics" | "evidence" | "learning";
+  active: "settings" | "thesis" | "dashboard" | "reports" | "metrics" | "evidence" | "evaluation" | "learning";
 }) {
   const tabs = [
     { key: "thesis" as const, label: "Thesis Studio", href: `/projects/${projectId}/thesis` },
     { key: "metrics" as const, label: "Metrics Library", href: `/projects/${projectId}/metrics` },
     { key: "evidence" as const, label: "Evidence Hub", href: `/projects/${projectId}/evidence` },
+    { key: "evaluation" as const, label: "Evaluation", href: `/projects/${projectId}/evaluation` },
     { key: "dashboard" as const, label: "Dashboard", href: `/projects/${projectId}/dashboard` },
     { key: "reports" as const, label: "Reports", href: `/projects/${projectId}/reports` },
     { key: "learning" as const, label: "Learning Agenda", href: `/projects/${projectId}/learning` },

@@ -1,4 +1,4 @@
-# Bridgeline — Phase 1a/1b/1c/1d prototype (+ Learning Agenda, second-pass audit fixes)
+# Bridgeline — Phase 1a/1b/1c/1d prototype (+ Learning Agenda, audit fixes, Impact-evaluation toolkit)
 
 A local, single-user prototype of **Bridgeline**, the MEL tool built for Conspectus Advisors:
 software that helps non-profits, impact investors, and philanthropies translate a climate thesis
@@ -134,6 +134,73 @@ All three fixes were verified directly against the seeded database (stage-link c
 Learning Agenda item creation and resolve-with-note, and the Grant Narrative's indicator table
 before/after on both TUMI — unaffected, all three metrics already reach Outcome/Impact — and
 ARARA, where 3 of 6 metrics now correctly surface and 3 correctly drop out).
+
+## Impact-evaluation toolkit (v8)
+
+Adapted from the World Bank's *Impact Evaluation in Practice* (Gertler, Martinez, Premand, Rawlings,
+Vermeersch). Bridgeline's buyers mostly run small portfolios where a randomized trial is not
+feasible, so the toolkit is built to do two things: bring rigor to causal claims where it is
+possible, and say plainly when monitoring plus a contribution story is the honest level. It is
+decision support for a strategic advisor. It does not collect or clean evaluation data.
+
+### What was added
+
+1. **Counterfactual on every hypothesis** (Thesis Studio). Each IF/THEN hypothesis now carries a
+   *counterfactual* (what happens without the intervention), a *comparison approach* (none,
+   randomized, regression discontinuity, difference-in-differences, matching, before/after,
+   contribution analysis, other) and a *claim type* (attribution vs contribution). Editable on
+   creation and inline afterward. A hypothesis row shows its claim type, the strength of its linked
+   evidence, and a count of gaps.
+2. **Evaluation page** (`/projects/[id]/evaluation`, new "Evaluation" tab), four tabs:
+   - **Method selector.** One form answers two questions and saves a snapshot of both.
+     *Should we evaluate?* scores five criteria (high stakes, innovative, replicable, untested,
+     influential): 4-5 = evaluate rigorously, 2-3 = light-touch evaluation, 0-1 = monitor and learn.
+     *How?* takes timing (prospective/retrospective), allocation rule, comparison data available and
+     number of independent units, and recommends a method with the key assumption, tests to run,
+     limits and alternatives. Rules in `src/lib/evaluation.ts` (`recommendMethod`):
+     oversubscribed + prospective, randomized lottery; phased + prospective, randomized phase-in;
+     voluntary universal + prospective, randomized promotion; score cutoff, regression discontinuity;
+     otherwise difference-in-differences if before/after data exist, matching if after-only, and
+     contribution analysis if there is no comparison data. **Small-n safeguard:** fewer than 30
+     independent units turns the headline into contribution analysis, with the statistical design
+     kept as the "if more units become available" option.
+   - **Causal claims.** Per hypothesis: claim type, comparison approach, linked-evidence strength and
+     plain-language gaps (no counterfactual; attribution claimed with no comparison approach or on a
+     design that cannot support it; "supported" with no or only weak evidence).
+   - **Indicators.** SMART check per metric (Specific, Measurable, Attributable, Realistic,
+     Targeted) with what is missing; a monitoring / evaluation purpose tag per indicator; and
+     results-chain coverage showing which rung types have no indicator reaching them.
+   - **Power check.** Minimum detectable effect for two equal arms with optional clustering
+     (design effect from cluster size and intra-cluster correlation), read back in plain language,
+     including an explicit "underpowered, do not claim impact" warning.
+3. **Evidence base** (Evidence Hub, new tab). A register of studies bearing on a hypothesis, each
+   graded by design: randomized and regression discontinuity = strong, difference-in-differences =
+   moderate, matching = limited, before/after and enrolled-vs-not-enrolled = weak (flagged as
+   "counterfeit" risk), qualitative = contextual (explains why, not how much). Each study is marked
+   efficacy (pilot, controlled) or effectiveness (normal conditions) so pilot results are not read
+   as scale-up proof. A hypothesis's evidence grade is its strongest linked study.
+
+### Data model changes (migration `0007`)
+
+- `impact_hypotheses`: `counterfactual`, `comparison_approach`, `claim_type` (default `contribution`).
+- `metrics`: `indicator_purpose` (`monitoring` | `evaluation`, nullable).
+- New `evidence_studies` and `evaluation_assessments` tables (24 tables in total).
+- `deleteHypothesis` now unlinks (rather than crashes on) any evidence study, assessment, use case,
+  certification or Learning Agenda item that references the hypothesis.
+
+### Deliberately not built
+
+- Instrumental-variables estimation and any statistical estimation of effects. Bridgeline advises
+  on design and records evidence; it does not run the analysis.
+- Spillover and ethics checklists, cost-effectiveness fields, and evaluation-plan / baseline-report
+  / final-report templates (the book's Part 3 outputs). Natural next additions to Reports.
+- Grading evidence strength on the Dashboard scorecard and in the donor-facing Grant Narrative.
+- Newer methods for small portfolios (synthetic controls, satellite MRV, LLM-based qualitative
+  synthesis) beyond naming contribution analysis as the fallback.
+
+Seed data (`npm run db:seed`) includes illustrative entries on both projects: stated and missing
+counterfactuals, a weak and a planned design, saved assessments, and indicator purposes, so the
+Causal claims tab has real gaps to point at. Study entries are marked illustrative.
 
 ## What's in this build
 
@@ -331,7 +398,8 @@ src/
       page.tsx                  Project settings (lens toggles, funding instruments)
       thesis/page.tsx           Thesis Studio
       metrics/page.tsx          Metrics Library (catalog, bespoke builder, jurisdictions, overlap)
-      evidence/page.tsx         Evidence Hub (report/import, review queue, use cases, certifications)
+      evidence/page.tsx         Evidence Hub (report/import, review queue, use cases, certifications, evidence base)
+      evaluation/page.tsx       Evaluation (method selector, causal claims, indicators, power check)
       dashboard/page.tsx        Actual vs. target dashboard + hypothesis scorecard
       reports/page.tsx                   Report template picker
       reports/grant-narrative/page.tsx   Grant/Funding Narrative Report (printable)
@@ -343,12 +411,13 @@ src/
     thesis/                     Thesis Studio building blocks (form, ToC tree, hypotheses, history,
                                  engagement funnel panel, commercial value chain panel)
     metrics/                    Catalog browser, bespoke builder, jurisdictions, metric detail, overlap
-    evidence/                   Report/import forms, review queue, use case board, certification register
+    evidence/                   Report/import forms, review queue, use case board, certification register, evidence base
+    evaluation/                 Method selector, indicator quality, power check
     dashboard/                  Metrics dashboard + hypothesis scorecard
     learning/                   Learning Agenda board
     project-nav.tsx, lens-toggle.tsx, print-button.tsx
   db/
-    schema.ts                   Drizzle schema (22 tables — Phase 1a/1b/1c/1d + Learning Agenda)
+    schema.ts                   Drizzle schema (24 tables — Phase 1a/1b/1c/1d + Learning Agenda + evaluation toolkit)
     client.ts                   SQLite connection (auto-creates its folder, auto-runs migrations)
     seed.ts                     TUMI (non-profit/grant) + ARARA (for-profit/commercial) demo projects
   lib/
@@ -357,6 +426,8 @@ src/
     catalog.ts                  Bundled IRIS+/SDG reference catalog (small curated subset)
     verification.ts             Rules-based observation verification pipeline (VerificationProvider-shaped, swappable)
     evidence.ts                 Certification renewal-status logic (computed from expiry date, never stored)
+    evaluation.ts               Pure impact-evaluation logic: method recommendation, evaluate-or-monitor screen,
+                                evidence grading, SMART check, power/MDE (no DB or framework imports)
     ai/
       types.ts                  Shared types + isAiAvailable() (no server directive — safe for client import)
       actions.ts                 draftThesisDecomposition() — the one LLM call in this build

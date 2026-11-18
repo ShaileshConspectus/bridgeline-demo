@@ -27,10 +27,21 @@ import {
   commercialValueChainStages,
   learningAgendaItems,
   fundingInstruments,
+  evidenceStudies,
+  evaluationAssessments,
 } from "@/db/schema";
 import { IRIS_PLUS_CATALOG, SDG_CATALOG } from "@/lib/catalog";
 import { runObservationVerification } from "@/lib/verification";
 import { isCertificationCurrent, checkSurveyFatigue } from "@/lib/evidence";
+import {
+  recommendMethod,
+  screenVerdict,
+  METHOD_LABEL,
+  SCREEN_VERDICT_LABEL,
+  type Allocation,
+  type ComparisonData,
+  type Timing,
+} from "@/lib/evaluation";
 
 // Fallback for callers that don't specify an organization — kept for
 // back-compat (and used when a project-create form is submitted with
@@ -345,6 +356,7 @@ export async function addHypothesis(thesisId: number, projectId: number, formDat
   const linkedEngagementStageIdRaw = String(formData.get("linkedEngagementStageId") ?? "");
   const linkedCommercialStageIdRaw = String(formData.get("linkedCommercialStageId") ?? "");
   const confidenceNote = String(formData.get("confidenceNote") ?? "").trim();
+  const evaluationFields = parseHypothesisEvaluationFields(formData);
   if (!statement) throw new Error("Hypothesis statement is required.");
 
   await db.insert(impactHypotheses).values({
@@ -358,9 +370,45 @@ export async function addHypothesis(thesisId: number, projectId: number, formDat
     linkedEngagementStageId: linkedEngagementStageIdRaw ? Number(linkedEngagementStageIdRaw) : null,
     linkedCommercialStageId: linkedCommercialStageIdRaw ? Number(linkedCommercialStageIdRaw) : null,
     confidenceNote: confidenceNote || null,
+    ...evaluationFields,
   });
 
   revalidatePath(`/projects/${projectId}/thesis`);
+}
+
+// ---------- Counterfactual / claim type (impact-evaluation toolkit) ----------
+const COMPARISON_APPROACHES = [
+  "none",
+  "randomized",
+  "regression_discontinuity",
+  "difference_in_differences",
+  "matching",
+  "before_after",
+  "contribution_analysis",
+  "other",
+] as const;
+type ComparisonApproach = (typeof COMPARISON_APPROACHES)[number];
+
+function parseHypothesisEvaluationFields(formData: FormData) {
+  const counterfactual = String(formData.get("counterfactual") ?? "").trim();
+  const approachRaw = String(formData.get("comparisonApproach") ?? "");
+  const claimRaw = String(formData.get("claimType") ?? "contribution");
+  return {
+    counterfactual: counterfactual || null,
+    comparisonApproach: (COMPARISON_APPROACHES as readonly string[]).includes(approachRaw)
+      ? (approachRaw as ComparisonApproach)
+      : null,
+    claimType: (claimRaw === "attribution" ? "attribution" : "contribution") as "attribution" | "contribution",
+  };
+}
+
+export async function updateHypothesisEvaluation(hypothesisId: number, projectId: number, formData: FormData) {
+  await db
+    .update(impactHypotheses)
+    .set(parseHypothesisEvaluationFields(formData))
+    .where(eq(impactHypotheses.id, hypothesisId));
+  revalidatePath(`/projects/${projectId}/thesis`);
+  revalidatePath(`/projects/${projectId}/evaluation`);
 }
 
 export async function updateHypothesisStatus(
@@ -396,8 +444,17 @@ export async function updateHypothesisStageLinks(hypothesisId: number, projectId
 export async function deleteHypothesis(hypothesisId: number, projectId: number) {
   await db.delete(assumptionRisks).where(eq(assumptionRisks.hypothesisId, hypothesisId));
   await db.delete(hypothesisMetricLinks).where(eq(hypothesisMetricLinks.hypothesisId, hypothesisId));
+  // Records that merely reference a hypothesis are independent of it:
+  // unlink rather than delete, so the delete can't violate their (nullable)
+  // foreign keys while foreign_keys = ON.
+  await db.update(evidenceStudies).set({ linkedHypothesisId: null }).where(eq(evidenceStudies.linkedHypothesisId, hypothesisId));
+  await db.update(evaluationAssessments).set({ hypothesisId: null }).where(eq(evaluationAssessments.hypothesisId, hypothesisId));
+  await db.update(useCases).set({ linkedHypothesisId: null }).where(eq(useCases.linkedHypothesisId, hypothesisId));
+  await db.update(certificationRecords).set({ linkedHypothesisId: null }).where(eq(certificationRecords.linkedHypothesisId, hypothesisId));
+  await db.update(learningAgendaItems).set({ linkedHypothesisId: null }).where(eq(learningAgendaItems.linkedHypothesisId, hypothesisId));
   await db.delete(impactHypotheses).where(eq(impactHypotheses.id, hypothesisId));
   revalidatePath(`/projects/${projectId}/thesis`);
+  revalidatePath(`/projects/${projectId}/evaluation`);
 }
 
 export async function addAssumptionRisk(hypothesisId: number, projectId: number, formData: FormData) {
@@ -1339,4 +1396,171 @@ export async function updateLearningAgendaItemStatus(
 export async function deleteLearningAgendaItem(itemId: number, projectId: number) {
   await db.delete(learningAgendaItems).where(eq(learningAgendaItems.id, itemId));
   revalidateLearningAgenda(projectId);
+}
+
+
+// ---------- Impact-evaluation toolkit ----------
+// Evidence base (Evidence Hub tab), method selector + "should we evaluate?"
+// screen, indicator purpose, and the read model for the Evaluation page.
+// Pure decision logic lives in src/lib/evaluation.ts.
+
+function revalidateEvaluation(projectId: number) {
+  revalidatePath(`/projects/${projectId}/evaluation`);
+  revalidatePath(`/projects/${projectId}/evidence`);
+  revalidatePath(`/projects/${projectId}/thesis`);
+}
+
+const STUDY_DESIGNS = [
+  "randomized",
+  "regression_discontinuity",
+  "difference_in_differences",
+  "matching",
+  "before_after",
+  "enrolled_vs_not_enrolled",
+  "qualitative",
+  "other",
+] as const;
+
+export async function listProjectEvidenceStudies(projectId: number) {
+  return db
+    .select()
+    .from(evidenceStudies)
+    .where(eq(evidenceStudies.projectId, projectId))
+    .orderBy(desc(evidenceStudies.createdAt));
+}
+
+export async function addEvidenceStudy(projectId: number, formData: FormData) {
+  const title = String(formData.get("title") ?? "").trim();
+  const citation = String(formData.get("citation") ?? "").trim();
+  const summary = String(formData.get("summary") ?? "").trim();
+  const designRaw = String(formData.get("design") ?? "");
+  const scopeRaw = String(formData.get("studyScope") ?? "unknown");
+  const linkedRaw = String(formData.get("linkedHypothesisId") ?? "");
+  if (!title) throw new Error("Study title is required.");
+  if (!(STUDY_DESIGNS as readonly string[]).includes(designRaw)) throw new Error("Choose a study design.");
+
+  await db.insert(evidenceStudies).values({
+    projectId,
+    title,
+    citation: citation || null,
+    summary: summary || null,
+    design: designRaw as (typeof STUDY_DESIGNS)[number],
+    studyScope: scopeRaw === "efficacy" || scopeRaw === "effectiveness" ? scopeRaw : "unknown",
+    linkedHypothesisId: linkedRaw ? Number(linkedRaw) : null,
+  });
+  revalidateEvaluation(projectId);
+}
+
+export async function deleteEvidenceStudy(studyId: number, projectId: number) {
+  await db.delete(evidenceStudies).where(eq(evidenceStudies.id, studyId));
+  revalidateEvaluation(projectId);
+}
+
+export async function updateMetricIndicatorPurpose(
+  metricId: number,
+  projectId: number,
+  purpose: "monitoring" | "evaluation" | null,
+) {
+  await db.update(metrics).set({ indicatorPurpose: purpose }).where(eq(metrics.id, metricId));
+  revalidateEvaluation(projectId);
+  revalidatePath(`/projects/${projectId}/metrics`);
+}
+
+const TIMINGS = ["prospective", "retrospective"] as const;
+const ALLOCATIONS = [
+  "oversubscribed",
+  "phased",
+  "cutoff",
+  "voluntary_universal",
+  "universal",
+  "self_selected",
+  "judgement",
+] as const;
+const COMPARISON_DATA = ["before_and_after", "after_only", "none"] as const;
+
+// Runs the method selector and the "should we evaluate?" screen together and
+// stores a snapshot (inputs + what they produced at the time), so the record
+// of why a method was chosen survives later changes to the rules.
+export async function saveEvaluationAssessment(projectId: number, formData: FormData) {
+  const title = String(formData.get("title") ?? "").trim();
+  const timing = String(formData.get("timing") ?? "");
+  const allocation = String(formData.get("allocation") ?? "");
+  const comparisonData = String(formData.get("comparisonData") ?? "");
+  const numUnitsRaw = String(formData.get("numUnits") ?? "").trim();
+  const hypothesisRaw = String(formData.get("hypothesisId") ?? "");
+  if (!title) throw new Error("Give the assessment a title.");
+  if (!(TIMINGS as readonly string[]).includes(timing)) throw new Error("Choose prospective or retrospective.");
+  if (!(ALLOCATIONS as readonly string[]).includes(allocation)) throw new Error("Choose how participants are allocated.");
+  if (!(COMPARISON_DATA as readonly string[]).includes(comparisonData)) throw new Error("Choose what comparison data exists.");
+
+  const numUnits = numUnitsRaw && Number.isFinite(Number(numUnitsRaw)) && Number(numUnitsRaw) >= 0 ? Math.floor(Number(numUnitsRaw)) : null;
+  const flags = {
+    highStakes: formData.get("highStakes") === "on",
+    innovative: formData.get("innovative") === "on",
+    replicable: formData.get("replicable") === "on",
+    untested: formData.get("untested") === "on",
+    influential: formData.get("influential") === "on",
+  };
+
+  const rec = recommendMethod({
+    timing: timing as Timing,
+    allocation: allocation as Allocation,
+    comparisonData: comparisonData as ComparisonData,
+    numUnits,
+  });
+  const verdict = screenVerdict(flags);
+
+  await db.insert(evaluationAssessments).values({
+    projectId,
+    hypothesisId: hypothesisRaw ? Number(hypothesisRaw) : null,
+    title,
+    timing: timing as Timing,
+    allocation: allocation as Allocation,
+    comparisonData: comparisonData as ComparisonData,
+    numUnits,
+    ...flags,
+    recommendedMethod: rec.primary,
+    screenVerdict: verdict,
+    rationale: [
+      `${SCREEN_VERDICT_LABEL[verdict]}.`,
+      `Method: ${METHOD_LABEL[rec.primary]}. ${rec.rationale}`,
+      ...rec.warnings,
+    ].join(" "),
+  });
+  revalidateEvaluation(projectId);
+}
+
+export async function deleteEvaluationAssessment(assessmentId: number, projectId: number) {
+  await db.delete(evaluationAssessments).where(eq(evaluationAssessments.id, assessmentId));
+  revalidateEvaluation(projectId);
+}
+
+// Read model for /projects/[id]/evaluation: everything the four tabs need in
+// one round of queries.
+export async function getEvaluationPageData(projectId: number) {
+  const thesis = await getCurrentThesis(projectId);
+  const [hypotheses, rungs, projectMetrics, studies, assessments] = await Promise.all([
+    thesis
+      ? db.select().from(impactHypotheses).where(eq(impactHypotheses.thesisId, thesis.id))
+      : Promise.resolve([] as (typeof impactHypotheses.$inferSelect)[]),
+    thesis
+      ? db.select().from(tocRungs).where(eq(tocRungs.thesisId, thesis.id)).orderBy(asc(tocRungs.sortOrder))
+      : Promise.resolve([] as (typeof tocRungs.$inferSelect)[]),
+    db.select().from(metrics).where(eq(metrics.projectId, projectId)),
+    listProjectEvidenceStudies(projectId),
+    db
+      .select()
+      .from(evaluationAssessments)
+      .where(eq(evaluationAssessments.projectId, projectId))
+      .orderBy(desc(evaluationAssessments.createdAt)),
+  ]);
+
+  const metricIds = projectMetrics.map((m) => m.id);
+  const [links, targets, baselines] = await Promise.all([
+    Promise.all(metricIds.map((id) => db.select().from(hypothesisMetricLinks).where(eq(hypothesisMetricLinks.metricId, id)))).then((r) => r.flat()),
+    Promise.all(metricIds.map((id) => db.select().from(metricTargets).where(eq(metricTargets.metricId, id)))).then((r) => r.flat()),
+    Promise.all(metricIds.map((id) => db.select().from(jurisdictionBaselines).where(eq(jurisdictionBaselines.metricId, id)))).then((r) => r.flat()),
+  ]);
+
+  return { thesis, hypotheses, rungs, metrics: projectMetrics, studies, assessments, links, targets, baselines };
 }

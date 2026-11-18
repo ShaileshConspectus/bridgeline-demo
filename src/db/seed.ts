@@ -37,6 +37,8 @@ import {
   certificationRecords,
   engagementFunnelStages,
   commercialValueChainStages,
+  evidenceStudies,
+  evaluationAssessments,
 } from "./schema";
 
 function seedCityEv(orgId: number) {
@@ -613,6 +615,70 @@ function seedCityEv(orgId: number) {
       expiryDate: "2027-01-15",
       linkedMetricId: metricEbuses.id,
       notes: "Annual third-party audit of deployed e-bus counts, required given the metric's elevated verification flag.",
+    })
+    .run();
+
+
+  // --- Impact-evaluation toolkit examples (illustrative). Shows a mix on
+  // purpose: one claim with a stated counterfactual and a planned design,
+  // one resting on a weak design, and one with nothing yet, so the Causal
+  // claims tab has real gaps to point at. ---
+  db.update(impactHypotheses)
+    .set({
+      counterfactual:
+        "Pilot City leads would receive no structured peer exchange and would learn about e-bus procurement ad hoc, at the pace they did before the programme.",
+      comparisonApproach: "difference_in_differences",
+      claimType: "attribution",
+    })
+    .where(eq(impactHypotheses.id, h1.id))
+    .run();
+  db.update(impactHypotheses)
+    .set({ comparisonApproach: "before_after", claimType: "attribution" })
+    .where(eq(impactHypotheses.id, h2.id))
+    .run();
+  db.update(metrics).set({ indicatorPurpose: "monitoring" }).where(eq(metrics.id, metricFemaleAttendance.id)).run();
+  db.update(metrics).set({ indicatorPurpose: "evaluation" }).where(eq(metrics.id, metricEbuses.id)).run();
+  db.update(metrics).set({ indicatorPurpose: "evaluation" }).where(eq(metrics.id, metricTargetsSet.id)).run();
+  db.insert(evidenceStudies)
+    .values([
+      {
+        projectId: project.id,
+        linkedHypothesisId: h1.id,
+        title: "Illustrative: peer-exchange cohort vs non-participating cities, before and after",
+        citation: "Illustrative entry for the demo. Replace with a real study.",
+        design: "difference_in_differences",
+        studyScope: "efficacy",
+        summary: "Planned design for the first cohort; no results yet.",
+      },
+      {
+        projectId: project.id,
+        linkedHypothesisId: h2.id,
+        title: "Illustrative: procurement pipeline tracker, 2022 vs 2024",
+        citation: "Illustrative entry for the demo. Internal tracker, no comparison group.",
+        design: "before_after",
+        studyScope: "unknown",
+        summary: "Pipeline grew over the period, but the design cannot separate the programme from other drivers.",
+      },
+    ])
+    .run();
+  db.insert(evaluationAssessments)
+    .values({
+      projectId: project.id,
+      hypothesisId: h1.id,
+      title: "Peer exchange programme, first cohort",
+      timing: "prospective",
+      allocation: "phased",
+      comparisonData: "before_and_after",
+      numUnits: 12,
+      highStakes: true,
+      innovative: true,
+      replicable: true,
+      untested: false,
+      influential: true,
+      recommendedMethod: "contribution_analysis",
+      screenVerdict: "evaluate_rigorously",
+      rationale:
+        "Evaluate rigorously. Method: Contribution analysis (no statistical counterfactual). Phased rollout lets you randomize the order, but only 12 independent units: too few for a credible statistical estimate. Rely on contribution analysis with strong monitoring.",
     })
     .run();
 
@@ -1259,6 +1325,38 @@ function seedBrare(orgId: number) {
     })
     .run();
 
+
+  // --- Impact-evaluation toolkit example (illustrative). ---
+  db.update(impactHypotheses)
+    .set({
+      counterfactual:
+        "Without the platform, smallholders would have no verified route to restoration finance and land would stay under current use.",
+      comparisonApproach: "contribution_analysis",
+      claimType: "contribution",
+    })
+    .where(eq(impactHypotheses.id, h1.id))
+    .run();
+  db.insert(evaluationAssessments)
+    .values({
+      projectId: project.id,
+      hypothesisId: h1.id,
+      title: "Smallholder restoration channel",
+      timing: "prospective",
+      allocation: "voluntary_universal",
+      comparisonData: "none",
+      numUnits: null,
+      highStakes: true,
+      innovative: true,
+      replicable: true,
+      untested: true,
+      influential: false,
+      recommendedMethod: "randomized_promotion",
+      screenVerdict: "evaluate_rigorously",
+      rationale:
+        "Evaluate rigorously. Method: Randomized promotion (encouragement design). You cannot deny the programme, but you can randomly encourage some units to take it up.",
+    })
+    .run();
+
   console.log(`Seeded project "${project.name}" (id ${project.id}) with thesis v${thesis.version}.`);
 }
 
@@ -1266,6 +1364,8 @@ function seedBrare(orgId: number) {
 // required below since foreign_keys is switched off for the duration of
 // the wipe, but the ordering is kept sensible for readability.
 const ALL_TABLES = [
+  "evaluation_assessments",
+  "evidence_studies",
   "learning_agenda_items",
   "metric_capital_provider_tags",
   "jurisdiction_baselines",

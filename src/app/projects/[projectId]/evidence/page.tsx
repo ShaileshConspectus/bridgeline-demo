@@ -9,6 +9,7 @@ import {
   getReviewQueueData,
   listProjectUseCases,
   listProjectCertifications,
+  listProjectEvidenceStudies,
 } from "@/lib/actions";
 import { ProjectNav } from "@/components/project-nav";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -16,6 +17,7 @@ import { ReportObservation } from "@/components/evidence/report-observation";
 import { ReviewQueue } from "@/components/evidence/review-queue";
 import { UseCaseBoard } from "@/components/evidence/use-case-board";
 import { CertificationsRegister } from "@/components/evidence/certifications-register";
+import { EvidenceBase } from "@/components/evidence/evidence-base";
 import { Badge } from "@/components/ui/badge";
 
 export default async function EvidenceHubPage({
@@ -38,6 +40,7 @@ export default async function EvidenceHubPage({
   const { observations, checks, verifications } = await getReviewQueueData(projectId);
   const useCasesList = await listProjectUseCases(projectId);
   const certificationsList = await listProjectCertifications(projectId);
+  const studiesList = await listProjectEvidenceStudies(projectId);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-12">
@@ -63,6 +66,7 @@ export default async function EvidenceHubPage({
           </TabsTrigger>
           <TabsTrigger value="usecases">Use cases</TabsTrigger>
           <TabsTrigger value="certifications">Certifications</TabsTrigger>
+          <TabsTrigger value="studies">Evidence base</TabsTrigger>
         </TabsList>
 
         <TabsContent value="report">
@@ -92,6 +96,12 @@ export default async function EvidenceHubPage({
         <TabsContent value="certifications">
           <div className="pt-3">
             <CertificationsRegister projectId={project.id} certificationsList={certificationsList} metricsList={metricsList} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="studies">
+          <div className="pt-3">
+            <EvidenceBase projectId={project.id} studies={studiesList} hypotheses={hypothesesList} />
           </div>
         </TabsContent>
       </Tabs>

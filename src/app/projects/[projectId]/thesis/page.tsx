@@ -7,6 +7,7 @@ import {
   getThesisHistory,
   listEngagementFunnelStages,
   listCommercialValueChainStages,
+  listProjectEvidenceStudies,
 } from "@/lib/actions";
 import { ProjectNav } from "@/components/project-nav";
 import { ThesisForm } from "@/components/thesis/thesis-form";
@@ -52,6 +53,8 @@ export default async function ThesisStudioPage({
         )
       ).flat()
     : [];
+
+  const studies = await listProjectEvidenceStudies(projectId);
 
   const [engagementStages, commercialStages] = thesis
     ? await Promise.all([listEngagementFunnelStages(thesis.id), listCommercialValueChainStages(thesis.id)])
@@ -102,6 +105,7 @@ export default async function ThesisStudioPage({
             metrics={projectMetrics}
             engagementStages={engagementStages}
             commercialStages={commercialStages}
+            studies={studies}
           />
 
           <VersionHistory history={history} />
