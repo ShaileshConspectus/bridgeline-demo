@@ -176,6 +176,30 @@ export const impactHypotheses = sqliteTable("impact_hypotheses", {
     .notNull()
     .default("untested"),
   confidenceNote: text("confidence_note"),
+  // --- Impact-evaluation toolkit additions ---
+  // The counterfactual: what would have happened to the same people/places
+  // WITHOUT the intervention. Every IF/THEN claim is a causal claim, so it
+  // needs one (Impact Evaluation in Practice, ch. 3).
+  counterfactual: text("counterfactual"),
+  // How the counterfactual will be (or was) estimated. "none" is a valid,
+  // honest answer — it is surfaced as a gap rather than hidden.
+  comparisonApproach: text("comparison_approach", {
+    enum: [
+      "none",
+      "randomized",
+      "regression_discontinuity",
+      "difference_in_differences",
+      "matching",
+      "before_after",
+      "contribution_analysis",
+      "other",
+    ],
+  }),
+  // Attribution = a valid counterfactual supports a causal claim;
+  // contribution = a plausible, evidenced story of the programme's part.
+  claimType: text("claim_type", { enum: ["attribution", "contribution"] })
+    .notNull()
+    .default("contribution"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),
@@ -221,6 +245,10 @@ export const metrics = sqliteTable("metrics", {
   aggregationMethod: text("aggregation_method", { enum: ["sum", "weighted_average", "custom"] })
     .notNull()
     .default("sum"),
+  // Monitoring indicators track delivery (inputs -> outputs, continuous);
+  // evaluation indicators support a causal claim about outcomes/impact.
+  // Nullable = not yet classified.
+  indicatorPurpose: text("indicator_purpose", { enum: ["monitoring", "evaluation"] }),
 });
 
 export const hypothesisMetricLinks = sqliteTable("hypothesis_metric_links", {
@@ -473,6 +501,77 @@ export const learningAgendaItems = sqliteTable("learning_agenda_items", {
   linkedFundingInstrumentId: integer("linked_funding_instrument_id").references(() => fundingInstruments.id),
   dueDate: text("due_date"),
   resolutionNote: text("resolution_note"), // what was decided/changed, filled in on resolve
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/**
+ * Impact-evaluation toolkit (adapted from "Impact Evaluation in Practice",
+ * World Bank).
+ *
+ * `evidence_studies` is the Evidence Hub's register of prior or own
+ * evaluations bearing on a hypothesis, graded by design strength so a
+ * before/after comparison can never be mistaken for a randomized trial.
+ * `evaluation_assessments` stores each run of the method selector and
+ * the "should we evaluate at all?" screen as a snapshot (inputs, scores,
+ * and the recommendation they produced at the time).
+ */
+export const evidenceStudies = sqliteTable("evidence_studies", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id),
+  linkedHypothesisId: integer("linked_hypothesis_id").references(() => impactHypotheses.id),
+  title: text("title").notNull(),
+  citation: text("citation"),
+  design: text("design", {
+    enum: [
+      "randomized",
+      "regression_discontinuity",
+      "difference_in_differences",
+      "matching",
+      "before_after",
+      "enrolled_vs_not_enrolled",
+      "qualitative",
+      "other",
+    ],
+  }).notNull(),
+  // Efficacy = pilot under controlled conditions; effectiveness = normal
+  // operating conditions (the one that matters for scale-up).
+  studyScope: text("study_scope", { enum: ["efficacy", "effectiveness", "unknown"] })
+    .notNull()
+    .default("unknown"),
+  summary: text("summary"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+export const evaluationAssessments = sqliteTable("evaluation_assessments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id),
+  hypothesisId: integer("hypothesis_id").references(() => impactHypotheses.id),
+  title: text("title").notNull(),
+  // --- Method selector inputs (programme operating rules) ---
+  timing: text("timing", { enum: ["prospective", "retrospective"] }).notNull(),
+  allocation: text("allocation", {
+    enum: ["oversubscribed", "phased", "cutoff", "voluntary_universal", "universal", "self_selected", "judgement"],
+  }).notNull(),
+  comparisonData: text("comparison_data", { enum: ["before_and_after", "after_only", "none"] }).notNull(),
+  numUnits: integer("num_units"), // number of independent units (clusters) that could be compared
+  // --- "Should we evaluate?" screen: one flag per criterion ---
+  highStakes: integer("high_stakes", { mode: "boolean" }).notNull().default(false),
+  innovative: integer("innovative", { mode: "boolean" }).notNull().default(false),
+  replicable: integer("replicable", { mode: "boolean" }).notNull().default(false),
+  untested: integer("untested", { mode: "boolean" }).notNull().default(false),
+  influential: integer("influential", { mode: "boolean" }).notNull().default(false),
+  // --- Snapshot of the result at the time it was run ---
+  recommendedMethod: text("recommended_method").notNull(),
+  screenVerdict: text("screen_verdict").notNull(),
+  rationale: text("rationale"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),

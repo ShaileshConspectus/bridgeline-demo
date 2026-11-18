@@ -23,9 +23,11 @@ import {
   updateHypothesisStageLinks,
   addAssumptionRisk,
   deleteAssumptionRisk,
+  updateHypothesisEvaluation,
 } from "@/lib/actions";
+import { evidenceBase, hypothesisGaps, TIER_LABEL, type StudyDesign } from "@/lib/evaluation";
 import { Trash2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
-import type { tocRungs, impactHypotheses, assumptionRisks, metrics, engagementFunnelStages, commercialValueChainStages } from "@/db/schema";
+import type { tocRungs, impactHypotheses, assumptionRisks, metrics, engagementFunnelStages, commercialValueChainStages, evidenceStudies } from "@/db/schema";
 
 type TocRung = typeof tocRungs.$inferSelect;
 type Hypothesis = typeof impactHypotheses.$inferSelect;
@@ -33,6 +35,7 @@ type AssumptionRisk = typeof assumptionRisks.$inferSelect;
 type Metric = typeof metrics.$inferSelect;
 type EngagementStage = typeof engagementFunnelStages.$inferSelect;
 type CommercialStage = typeof commercialValueChainStages.$inferSelect;
+type Study = typeof evidenceStudies.$inferSelect;
 
 const ENGAGEMENT_STAGE_LABEL: Record<string, string> = {
   reach: "Reach",
@@ -48,6 +51,25 @@ const STATUS_VARIANT: Record<string, "muted" | "warning" | "ok" | "danger" | "de
   supported: "ok",
   refuted: "danger",
   inconclusive: "default",
+};
+
+const COMPARISON_OPTIONS: { value: string; label: string }[] = [
+  { value: "none", label: "None yet" },
+  { value: "randomized", label: "Randomized assignment" },
+  { value: "regression_discontinuity", label: "Regression discontinuity" },
+  { value: "difference_in_differences", label: "Difference-in-differences" },
+  { value: "matching", label: "Matching" },
+  { value: "before_after", label: "Before / after only" },
+  { value: "contribution_analysis", label: "Contribution analysis" },
+  { value: "other", label: "Other" },
+];
+
+const TIER_VARIANT: Record<string, "ok" | "default" | "warning" | "danger" | "muted"> = {
+  strong: "ok",
+  moderate: "default",
+  limited: "warning",
+  weak: "danger",
+  contextual: "muted",
 };
 
 const RUNG_LABELS: Record<string, string> = {
@@ -67,6 +89,7 @@ export function HypothesisStudio({
   rungs,
   engagementStages = [],
   commercialStages = [],
+  studies = [],
 }: {
   projectId: number;
   thesisId: number;
@@ -76,6 +99,7 @@ export function HypothesisStudio({
   metrics: Metric[];
   engagementStages?: EngagementStage[];
   commercialStages?: CommercialStage[];
+  studies?: Study[];
 }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -179,6 +203,7 @@ export function HypothesisStudio({
                   )}
                 </div>
               )}
+              <EvaluationFields idPrefix="add" />
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="confidenceNote">Confidence note (optional)</Label>
                 <Textarea id="confidenceNote" name="confidenceNote" rows={2} />
@@ -204,6 +229,12 @@ export function HypothesisStudio({
           const linkedCommercialStage = commercialStages.find((s) => s.id === h.linkedCommercialStageId);
           const relatedAssumptions = assumptions.filter((a) => a.hypothesisId === h.id);
           const isExpanded = expanded === h.id;
+          const base = evidenceBase(
+            studies
+              .filter((st) => st.linkedHypothesisId === h.id)
+              .map((st) => ({ design: st.design as StudyDesign, studyScope: st.studyScope })),
+          );
+          const gaps = hypothesisGaps(h, base);
 
           return (
             <div key={h.id} className="rounded-md border border-border">
@@ -227,6 +258,17 @@ export function HypothesisStudio({
                       {relatedAssumptions.length > 0 &&
                         ` · ${relatedAssumptions.length} assumption${relatedAssumptions.length === 1 ? "" : "s"}`}
                     </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <Badge variant="outline" className="capitalize">{h.claimType}</Badge>
+                      {base.tier ? (
+                        <Badge variant={TIER_VARIANT[base.tier]}>
+                          Evidence: {TIER_LABEL[base.tier]} ({base.count})
+                        </Badge>
+                      ) : (
+                        <Badge variant="muted">No evidence linked</Badge>
+                      )}
+                      {gaps.length > 0 && <Badge variant="warning">{gaps.length} gap{gaps.length === 1 ? "" : "s"}</Badge>}
+                    </div>
                     {(linkedEngagementStage || linkedCommercialStage) && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {linkedEngagementStage && (
@@ -259,6 +301,29 @@ export function HypothesisStudio({
 
               {isExpanded && (
                 <div className="border-t border-border p-3">
+                  <p className="mb-2 text-sm font-semibold">Counterfactual &amp; claim</p>
+                  {gaps.length > 0 && (
+                    <ul className="mb-2 list-disc pl-5 text-sm text-warning">
+                      {gaps.map((g) => (
+                        <li key={g}>{g}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <form action={updateHypothesisEvaluation.bind(null, h.id, projectId)} className="mb-4 flex flex-col gap-3">
+                    <EvaluationFields
+                      idPrefix={`edit-${h.id}`}
+                      defaults={{
+                        counterfactual: h.counterfactual ?? "",
+                        comparisonApproach: h.comparisonApproach ?? "",
+                        claimType: h.claimType,
+                      }}
+                    />
+                    <div>
+                      <Button type="submit" size="sm" variant="outline">
+                        Save
+                      </Button>
+                    </div>
+                  </form>
                   <p className="mb-2 text-sm font-semibold">Assumptions &amp; risks</p>
                   <div className="flex flex-col gap-2">
                     {relatedAssumptions.map((a) => (
@@ -417,5 +482,61 @@ function StageLinkEditDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Counterfactual + claim type + comparison approach (impact-evaluation
+// toolkit). Shared by the add dialog and the inline editor so the two stay
+// identical.
+function EvaluationFields({
+  idPrefix,
+  defaults,
+}: {
+  idPrefix: string;
+  defaults?: { counterfactual: string; comparisonApproach: string; claimType: string };
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`${idPrefix}-counterfactual`}>Counterfactual: what happens without the intervention? (optional)</Label>
+        <Textarea
+          id={`${idPrefix}-counterfactual`}
+          name="counterfactual"
+          rows={2}
+          defaultValue={defaults?.counterfactual ?? ""}
+          placeholder="e.g. Cities would keep buying diesel buses at the current rate"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${idPrefix}-comparisonApproach`}>Comparison approach</Label>
+          <select
+            id={`${idPrefix}-comparisonApproach`}
+            name="comparisonApproach"
+            defaultValue={defaults?.comparisonApproach ?? ""}
+            className="h-9 rounded-md border border-border bg-surface px-3 text-sm"
+          >
+            <option value="">Not set</option>
+            {COMPARISON_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${idPrefix}-claimType`}>Claim</Label>
+          <select
+            id={`${idPrefix}-claimType`}
+            name="claimType"
+            defaultValue={defaults?.claimType ?? "contribution"}
+            className="h-9 rounded-md border border-border bg-surface px-3 text-sm"
+          >
+            <option value="contribution">Contribution (plausible part in the change)</option>
+            <option value="attribution">Attribution (measured causal effect)</option>
+          </select>
+        </div>
+      </div>
+    </div>
   );
 }
